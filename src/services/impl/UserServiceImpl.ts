@@ -30,13 +30,8 @@ export class UserServiceImpl implements UserService{
 
     public logout = async () => {
         try {
-            const clientlogs= await whatsAppClientInstance.logout();
-            if (clientlogs === 1){
-                console.log('Logged out successfully');
-                await whatsAppClientInstance.initialize();
-            }else{
-                console.log('Login failed')
-            }
+           return await whatsAppClientInstance.logout();
+            
         }
         catch (error){
             console.error('Error logging out:', error);

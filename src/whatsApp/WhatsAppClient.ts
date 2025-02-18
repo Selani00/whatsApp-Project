@@ -2,15 +2,14 @@ import fs from 'fs';
 import path from 'path';
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
-import qrcode from 'qrcode-terminal';
-// import qrcode from 'qrcode';
+// import qrcode from 'qrcode-terminal';
+import qrcode from 'qrcode';
 import {AppError} from "../utils/AppError";
 import {StatusCodes} from "../utils/StatusCodes";
 import dotenv from 'dotenv';
 import rabbitMQInstance from '../rabbitmq/RabbitMQService';
 import express from 'express';
 // import {UserRepositoryImpl} from '../repository/Impl/UserRepositoryImpl';
-
 // const userRepository = new UserRepositoryImpl();
 
 
@@ -93,7 +92,9 @@ class WhatsAppClientSingleton {
             try {
                 this.qrCodeData = qr;
                 console.log('QR code data:', qr);
-                qrcode.generate(qr, { small: true });
+
+                // when using qrcode-terminal
+                // qrcode.generate(qr, { small: true });
             } catch (error: any) {
                 console.error('Error generating QR code:', error.message);
             }
@@ -175,19 +176,23 @@ class WhatsAppClientSingleton {
         }
     }
 
+
+    
     public getQRCodeImage = async (req: express.Request, res: express.Response) => {
         try {
-            if(!this.client){
-                console.log("client is null,  so is initializing");
-                await this.initialize();
-            }
             if (this.qrCodeData) {
-                // convert base64 image and send it as response
 
-                // const base64QRCode = await qrcode.toDataURL(this.qrCodeData);
-                res.status(200).send({
-                    qrCode: this.qrCodeData
-                });
+                // qr code token
+
+                // return res.status(200).send({
+                //     qrCode: this.qrCodeData
+                // });
+
+                const qrImage = await qrcode.toDataURL(this.qrCodeData); // Generate QR as base64
+                return res.status(200).send({ qrCode: qrImage });
+
+
+                
             } else {
                 throw new AppError('Failed to retrieve QR code', StatusCodes.INTERNAL_SERVER_ERROR);
             }
@@ -197,6 +202,8 @@ class WhatsAppClientSingleton {
         }
     };
 
+    
+
     async logout() {
         try {
             if (this.client) {
@@ -204,15 +211,47 @@ class WhatsAppClientSingleton {
                 console.log('WhatsApp client logged out successfully.');
                 await this.client.destroy();               
                 console.log('WhatsApp client destroyed.');
-                // this.client = null;
                 // Delete session data
-                const sessionPath = path.join(__dirname, '../../.wwebjs_auth'); // Adjust the path if needed
+                const sessionPath = path.join(__dirname, '../../.wwebjs_auth');
                 if (fs.existsSync(sessionPath)) {
                     fs.rmSync(sessionPath, { recursive: true, force: true });
                     console.log('Session data deleted.');
                 }
 
-                this.client = null;
+                this.client= new Client({
+                    authStrategy: new LocalAuth({
+                        clientId: 'client-one',
+                        dataPath: './.wwebjs_auth'
+                    }),
+                    puppeteer: {
+                        headless: true,
+                        args: [
+                            '--no-sandbox',
+                            '--disable-setuid-sandbox',
+                            '--disable-dev-shm-usage',
+                            '--disable-accelerated-2d-canvas',
+                            '--no-first-run',
+                            '--no-zygote',
+                            '--single-process',
+                            '--disable-gpu',
+                            '--disable-extensions',
+                            '--disable-software-rasterizer'
+                        ],
+                        defaultViewport: null,
+                        timeout: 60000,
+                        ignoreHTTPSErrors: true
+                    },
+                    restartOnAuthFail: true,
+                    qrMaxRetries: 5,
+                    authTimeoutMs: 60000,
+                    takeoverOnConflict: true,
+                    takeoverTimeoutMs: 60000
+                },
+                
+            );
+
+            this.registerEventListeners();
+
                 return 1;
             } else {
                 console.log('No active client to log out.');
@@ -231,7 +270,6 @@ class WhatsAppClientSingleton {
                 return false;
             }
             return true;
-            // return this.client && this.client.info !== null;
         } catch (error) {
             console.error('Error checking connection status:', error);
             return false;
